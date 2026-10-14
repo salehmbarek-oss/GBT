@@ -1,1 +1,32 @@
 
+name: Build APK
+on: workflow_dispatch
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: unzip -q compte_rendu_gbt.zip && cp -r gbt/. . && rm -rf gbt
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - uses: subosito/flutter-action@v2
+        with: { channel: stable }
+      - run: flutter create --org com.gbt --project-name compte_rendu_gbt --platforms android .
+      - name: Patch Android
+        run: |
+          mkdir -p android/app/src/main/kotlin/com/gbt/compte_rendu_gbt android/app/src/main/res/xml
+          cp android_patch/kotlin/MainActivity.kt android/app/src/main/kotlin/com/gbt/compte_rendu_gbt/MainActivity.kt
+          rm -f android/app/src/main/kotlin/com/gbt/compte_rendu_gbt/MainActivity.java
+          cp android_patch/res_xml/file_paths.xml android/app/src/main/res/xml/file_paths.xml
+          cp -r android_patch/res/. android/app/src/main/res/
+          M=android/app/src/main/AndroidManifest.xml
+          sed -i 's|<application|<uses-permission android:name="android.permission.INTERNET"/><uses-permission android:name="android.permission.CAMERA"/><uses-permission android:name="android.permission.VIBRATE"/><uses-permission android:name="android.permission.USE_BIOMETRIC"/><uses-permission android:name="android.permission.READ_CONTACTS"/><uses-feature android:name="android.hardware.camera" android:required="false"/><uses-feature android:name="android.hardware.camera.autofocus" android:required="false"/><queries><package android:name="com.whatsapp"/></queries><application|' $M
+          sed -i 's|</application>|<provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.gbtprovider" android:exported="false" android:grantUriPermissions="true"><meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths"/></provider></application>|' $M
+          sed -i 's/android:label="[^"]*"/android:label="Compte Rendu GBT"/' $M
+          sed -i 's/flutter.minSdkVersion/23/' android/app/build.gradle* || true
+      - run: flutter pub get
+      - run: flutter build apk --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CompteRenduGBT-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
